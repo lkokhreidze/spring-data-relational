@@ -17,20 +17,19 @@ package org.springframework.data.r2dbc.config;
 
 import java.lang.annotation.Annotation;
 
+import org.springframework.beans.factory.ListableBeanFactory;
 import org.springframework.beans.factory.config.BeanDefinition;
-import org.springframework.beans.factory.support.AbstractBeanDefinition;
 import org.springframework.beans.factory.support.BeanDefinitionBuilder;
 import org.springframework.beans.factory.support.BeanDefinitionReaderUtils;
 import org.springframework.beans.factory.support.BeanDefinitionRegistry;
-import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 import org.springframework.context.annotation.ImportBeanDefinitionRegistrar;
-import org.springframework.core.type.AnnotationMetadata;
 import org.springframework.data.auditing.ReactiveIsNewAwareAuditingHandler;
 import org.springframework.data.auditing.config.AuditingBeanDefinitionRegistrarSupport;
 import org.springframework.data.auditing.config.AuditingConfiguration;
 import org.springframework.data.config.ParsingUtils;
 import org.springframework.data.mapping.context.PersistentEntities;
 import org.springframework.data.r2dbc.mapping.event.ReactiveAuditingEntityCallback;
+import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 
 /**
@@ -41,81 +40,46 @@ import org.springframework.util.Assert;
  */
 class R2dbcAuditingRegistrar extends AuditingBeanDefinitionRegistrarSupport {
 
-	String persistentEntitiesBeanName;
-
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.auditing.config.AuditingBeanDefinitionRegistrarSupport#getAnnotation()
-	 */
 	@Override
 	protected Class<? extends Annotation> getAnnotation() {
 		return EnableR2dbcAuditing.class;
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.auditing.config.AuditingBeanDefinitionRegistrarSupport#getAuditingHandlerBeanName()
-	 */
 	@Override
 	protected String getAuditingHandlerBeanName() {
 		return "r2dbcAuditingHandler";
 	}
 
 	@Override
-	public void registerBeanDefinitions(AnnotationMetadata annotationMetadata, BeanDefinitionRegistry registry) {
-		Assert.notNull(registry, "Registry must not be null!");
+	protected void postProcess(BeanDefinitionBuilder builder, AuditingConfiguration configuration,
+			BeanDefinitionRegistry registry) {
 
-		if(persistentEntitiesBeanName == null) {
-			if (registry instanceof DefaultListableBeanFactory beanFactory) {
-				for (String bn : beanFactory.getBeanNamesForType(PersistentEntities.class)) {
-					if (bn.startsWith("r2dbc")) {
-						persistentEntitiesBeanName = bn;
-					}
-				}
-			}
-			if(persistentEntitiesBeanName == null) {
+		String persistentEntitiesBeanName = detectPersistentEntitiesBeanName(registry);
 
-				persistentEntitiesBeanName = BeanDefinitionReaderUtils.uniqueBeanName("r2dbc.persistent-entities", registry);
+		if (persistentEntitiesBeanName == null) {
 
-				BeanDefinitionBuilder definition = BeanDefinitionBuilder.genericBeanDefinition(PersistentEntities.class)
-						.setFactoryMethod("of")
-						//.addConstructorArgValue(new RuntimeBeanReference(MongoMappingContext.class))
-						.addConstructorArgReference("r2dbcMappingContext");
-				registry.registerBeanDefinition(persistentEntitiesBeanName, definition.getBeanDefinition());
-			}
+			persistentEntitiesBeanName = BeanDefinitionReaderUtils.uniqueBeanName("r2dbcPersistentEntities", registry);
+
+			// TODO: https://github.com/spring-projects/spring-framework/issues/28728
+			BeanDefinitionBuilder definition = BeanDefinitionBuilder.genericBeanDefinition(PersistentEntities.class) //
+					.setFactoryMethod("of") //
+					.addConstructorArgReference("r2dbcMappingContext");
+
+			registry.registerBeanDefinition(persistentEntitiesBeanName, definition.getBeanDefinition());
 		}
 
-		super.registerBeanDefinitions(annotationMetadata, registry);
+		builder.addConstructorArgReference(persistentEntitiesBeanName);
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.auditing.config.AuditingBeanDefinitionRegistrarSupport#getAuditHandlerBeanDefinitionBuilder(org.springframework.data.auditing.config.AuditingConfiguration)
-	 */
 	@Override
 	protected BeanDefinitionBuilder getAuditHandlerBeanDefinitionBuilder(AuditingConfiguration configuration) {
 
 		Assert.notNull(configuration, "AuditingConfiguration must not be null");
 
-		BeanDefinitionBuilder builder = BeanDefinitionBuilder.rootBeanDefinition(ReactiveIsNewAwareAuditingHandler.class);
-		builder.addConstructorArgReference(persistentEntitiesBeanName);
-		return configureDefaultAuditHandlerAttributes(configuration, builder);
-//
-//		BeanDefinitionBuilder builder = BeanDefinitionBuilder.rootBeanDefinition(ReactiveIsNewAwareAuditingHandler.class);
-//
-//
-//		BeanDefinitionBuilder definition = BeanDefinitionBuilder.rootBeanDefinition(PersistentEntitiesFactoryBean.class);
-//		definition.setRole(BeanDefinition.ROLE_INFRASTRUCTURE);
-//		definition.setAutowireMode(AbstractBeanDefinition.AUTOWIRE_CONSTRUCTOR);
-//
-//		builder.addConstructorArgValue(definition.getBeanDefinition());
-//		return configureDefaultAuditHandlerAttributes(configuration, builder);
+		return configureDefaultAuditHandlerAttributes(configuration,
+				BeanDefinitionBuilder.rootBeanDefinition(ReactiveIsNewAwareAuditingHandler.class));
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.auditing.config.AuditingBeanDefinitionRegistrarSupport#registerAuditListener(org.springframework.beans.factory.config.BeanDefinition, org.springframework.beans.factory.support.BeanDefinitionRegistry)
-	 */
 	@Override
 	protected void registerAuditListenerBeanDefinition(BeanDefinition auditingHandlerDefinition,
 			BeanDefinitionRegistry registry) {
@@ -130,6 +94,20 @@ class R2dbcAuditingRegistrar extends AuditingBeanDefinitionRegistrarSupport {
 
 		registerInfrastructureBeanWithId(builder.getBeanDefinition(), ReactiveAuditingEntityCallback.class.getName(),
 				registry);
+	}
+
+	@Nullable
+	private static String detectPersistentEntitiesBeanName(BeanDefinitionRegistry registry) {
+
+		if (registry instanceof ListableBeanFactory beanFactory) {
+			for (String bn : beanFactory.getBeanNamesForType(PersistentEntities.class)) {
+				if (bn.startsWith("r2dbc")) {
+					return bn;
+				}
+			}
+		}
+
+		return null;
 	}
 
 }
