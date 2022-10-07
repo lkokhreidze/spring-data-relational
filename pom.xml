@@ -42,6 +42,10 @@
 		<!-- test utilities-->
 		<awaitility.version>4.2.0</awaitility.version>
 		<archunit.version>1.0.0</archunit.version>
+
+		<simple-module-name>jdbc</simple-module-name>
+		<java-module-name>spring.data.${simple-module-name}</java-module-name>
+		<github-repo>https://github.com/spring-projects/spring-data-relational</github-repo>
 	</properties>
 
 	<inceptionYear>2017</inceptionYear>

@@ -34,6 +34,9 @@
 		<r2dbc-spi.version>1.0.0.RELEASE</r2dbc-spi.version>
 		<reactive-streams.version>1.0.4</reactive-streams.version>
 		<netty>4.1.79.Final</netty>
+
+		<simple-module-name>r2dbc</simple-module-name>
+		<java-module-name>spring.data.${simple-module-name}</java-module-name>
 	</properties>
 
 	<inceptionYear>2018</inceptionYear>
